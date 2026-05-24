@@ -7,7 +7,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
@@ -20,6 +19,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set lowercase image name
+        run: echo "IMAGE_LC=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Check upstream LightCountry/TokenPay for new version
         id: check
@@ -74,7 +76,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.check.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_LC }}:${{ steps.check.outputs.version }}
           labels: |
             org.opencontainers.image.version=${{ steps.check.outputs.version }}
           cache-from: type=gha
