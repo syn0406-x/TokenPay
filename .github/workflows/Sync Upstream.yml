@@ -2,7 +2,7 @@ name: 每日同步更新
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # 每小时检查
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 permissions:
@@ -26,59 +26,85 @@ jobs:
         run: |
           git remote remove upstream || true
           git remote add upstream https://github.com/LightCountry/TokenPay.git
+          git fetch upstream
 
-      - name: Fetch upstream
-        run: git fetch upstream
+      # =========================
+      # 1. upstream hash
+      # =========================
+      - name: Get upstream hash
+        id: upstream
+        run: |
+          echo "hash=$(git rev-parse upstream/master)" >> $GITHUB_OUTPUT
 
-      # ===============================
-      # 1. upstream 变更检测
-      # ===============================
-      - name: Check upstream changes
+      # =========================
+      # 2. load last sync hash
+      # =========================
+      - name: Load state
+        id: state
+        run: |
+          FILE=".last_sync"
+          if [ -f "$FILE" ]; then
+            echo "last=$(cat $FILE)" >> $GITHUB_OUTPUT
+          else
+            echo "last=none" >> $GITHUB_OUTPUT
+          fi
+
+      # =========================
+      # 3. skip if no change (关键优化)
+      # =========================
+      - name: Check change
         id: check
         run: |
-          LOCAL=$(git rev-parse HEAD)
-          REMOTE=$(git rev-parse upstream/master)
-
-          if [ "$LOCAL" = "$REMOTE" ]; then
+          if [ "${{ steps.upstream.outputs.hash }}" = "${{ steps.state.outputs.last }}" ]; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      # ===============================
-      # 2. 获取 upstream tag
-      # ===============================
-      - name: Get upstream tag
+      # =========================
+      # 4. get upstream tag
+      # =========================
+      - name: Get version
         if: steps.check.outputs.changed == 'true'
-        id: tag
+        id: ver
         run: |
-          TAG=$(git describe --tags upstream/master 2>/dev/null || echo "no-tag")
+          TAG=$(git describe --tags upstream/master 2>/dev/null || echo "v0.0.0")
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      # ===============================
-      # 3. 只同步指定文件
-      # ===============================
-      - name: Sync selected files
+      # =========================
+      # 5. sync files
+      # =========================
+      - name: Sync upstream
         if: steps.check.outputs.changed == 'true'
         run: |
-          git checkout upstream/master -- Plugs || true
           git checkout upstream/master -- src || true
+          git checkout upstream/master -- Plugs || true
           git checkout upstream/master -- .gitignore || true
-          git checkout upstream/master -- .gitattributes || true
           git checkout upstream/master -- LICENSE.txt || true
+          git checkout upstream/master -- .gitattributes || true
 
-      # ===============================
-      # 4. commit（带版本信息）
-      # ===============================
-      - name: Commit changes
+      # =========================
+      # 6. commit only if diff exists
+      # =========================
+      - name: Commit
         if: steps.check.outputs.changed == 'true'
         run: |
           git add .
-          git commit -m "sync upstream ${{ steps.tag.outputs.tag }}" || true
+          git diff --cached --quiet && exit 0
+          git commit -m "sync upstream ${{ steps.ver.outputs.tag }}"
 
-      # ===============================
-      # 5. push
-      # ===============================
+      # =========================
+      # 7. update state hash（关键）
+      # =========================
+      - name: Save state
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          echo "${{ steps.upstream.outputs.hash }}" > .last_sync
+
+      # =========================
+      # 8. push trigger docker
+      # =========================
       - name: Push
         if: steps.check.outputs.changed == 'true'
-        run: git push origin pay
+        run: |
+          git push origin pay
