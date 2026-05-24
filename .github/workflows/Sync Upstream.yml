@@ -1,0 +1,84 @@
+name: 每日同步更新
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # 每小时检查
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup git
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      - name: Add upstream
+        run: |
+          git remote remove upstream || true
+          git remote add upstream https://github.com/LightCountry/TokenPay.git
+
+      - name: Fetch upstream
+        run: git fetch upstream
+
+      # ===============================
+      # 1. upstream 变更检测
+      # ===============================
+      - name: Check upstream changes
+        id: check
+        run: |
+          LOCAL=$(git rev-parse HEAD)
+          REMOTE=$(git rev-parse upstream/master)
+
+          if [ "$LOCAL" = "$REMOTE" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      # ===============================
+      # 2. 获取 upstream tag
+      # ===============================
+      - name: Get upstream tag
+        if: steps.check.outputs.changed == 'true'
+        id: tag
+        run: |
+          TAG=$(git describe --tags upstream/master 2>/dev/null || echo "no-tag")
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      # ===============================
+      # 3. 只同步指定文件
+      # ===============================
+      - name: Sync selected files
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git checkout upstream/master -- Plugs || true
+          git checkout upstream/master -- src || true
+          git checkout upstream/master -- .gitignore || true
+          git checkout upstream/master -- .gitattributes || true
+          git checkout upstream/master -- LICENSE.txt || true
+
+      # ===============================
+      # 4. commit（带版本信息）
+      # ===============================
+      - name: Commit changes
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git add .
+          git commit -m "sync upstream ${{ steps.tag.outputs.tag }}" || true
+
+      # ===============================
+      # 5. push
+      # ===============================
+      - name: Push
+        if: steps.check.outputs.changed == 'true'
+        run: git push origin pay
