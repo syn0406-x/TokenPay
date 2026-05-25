@@ -1,4 +1,5 @@
 name: Auto Build Docker
+
 on:
   schedule:
     - cron: '0 0 * * *'
@@ -75,7 +76,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_LC }}:${{ steps.check.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_LC }}:latest
           labels: |
             org.opencontainers.image.version=${{ steps.check.outputs.version }}
           cache-from: type=gha
